@@ -100,7 +100,7 @@ def create_shift():
         
         # Validate request data
         schema = AssignedShiftSchema()
-        data = schema.load(request.json, context={'start_time': request.json.get('start_time')})
+        data = schema.load(request.json)
         
         # Check if user exists and is active
         user = User.query.get(data['user_id'])

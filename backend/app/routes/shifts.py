@@ -53,7 +53,7 @@ def get_shift_requirements():
     
 # Get shift requirment by ID
 
-@shifts_bp.route('/<int: requirement_id>', methods=['GET'])
+@shifts_bp.route('/<int:requirement_id>', methods=['GET'])
 @jwt_required()
 def get_shift_requirement(requirement_id):
     try:
@@ -89,7 +89,7 @@ def create_shift_requirement():
         
         # Validate request data
         schema = ShiftRequirementSchema()
-        data = schema.load(request.json, context={'start_time': request.json.get('start_time')})
+        data = schema.load(request.json)
         
         # Check if role exists
         role = Role.query.get(data['role_id'])
