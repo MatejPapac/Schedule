@@ -27,6 +27,7 @@ import enUS from 'date-fns/locale/en-US';
 import AppLayout from '../../components/AppLayout';
 import { scheduleAPI, userAPI, roleAPI, timeOffAPI } from '../../services/api';
 
+
 // Setup localizer for the calendar
 const locales = {
   'en-US': enUS,
