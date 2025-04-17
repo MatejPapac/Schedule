@@ -2,9 +2,8 @@ from marshmallow import Schema, fields, validate, validates, ValidationError
 from datetime import datetime
 
 class UserSchema(Schema):
-
-    id=fields.Int(dump_only=True)
-    username = fields.Str(required=True, validate=validate.Length(min=3,max=64))
+    id = fields.Int(dump_only=True)
+    username = fields.Str(required=True, validate=validate.Length(min=3, max=64))
     password = fields.Str(load_only=True, required=True, validate=validate.Length(min=6))
     name = fields.Str(required=True)
     email = fields.Email(required=True)
@@ -13,7 +12,18 @@ class UserSchema(Schema):
     active = fields.Bool(missing=True)
     created_at = fields.DateTime(dump_only=True)
     updated_at = fields.DateTime(dump_only=True)
-    capable_roles = fields.List(fields.Int(),required=False)
+    
+    # Format for Method field
+    capable_roles = fields.Method(
+        serialize="serialize_capable_roles", 
+        deserialize="deserialize_capable_roles"
+    )
+    
+    def serialize_capable_roles(self, obj):
+        return [role.id for role in obj.capable_roles]
+    
+    def deserialize_capable_roles(self, value, attr, obj, **kwargs):
+        return value  
 
 class UserUpdateSchema(Schema):
     name = fields.Str()

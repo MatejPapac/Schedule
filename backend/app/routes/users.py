@@ -78,57 +78,57 @@ def get_user(user_id):
 from flask_jwt_extended import jwt_required # Keep the import
 # ... potentially import check_manager if it's defined elsewhere ...
 
+# Create new user (managers only)
 @users_bp.route('', methods=['POST'])
-# @jwt_required()  # <<=== 1. COMMENT OUT THIS LINE TEMPORARILY
+@jwt_required()
 def create_user():
     try:
-        # Check if user is a manager <<=== 2. COMMENT OUT THIS BLOCK TEMPORARILY
-        # if not check_manager():
-        #     return jsonify({'error': 'Unauthorized access'}), 403
-
-        # Validate request data (Keep this and the rest)
-        schema = UserSchema() # Make sure UserSchema is imported
-        data = schema.load(request.json) # Make sure request is imported
-
-        # ... (rest of the function remains the same) ...
-
-        if User.query.filter_by(username=data['username']).first(): # Make sure User is imported
-             return jsonify({'error': 'Username already exists'}), 400
-
-        if User.query.filter_by(email=data['email']).first(): # Make sure User is imported
-             return jsonify({'error': 'Email already exists'}), 400
-
+        # Check if user is a manager
+        if not check_manager():
+            return jsonify({'error': 'Unauthorized access'}), 403
+        
+        # Validate request data
+        schema = UserSchema()
+        data = schema.load(request.json)
+        
+        # Check if username or email already exists
+        if User.query.filter_by(username=data['username']).first():
+            return jsonify({'error': 'Username already exists'}), 400
+        
+        if User.query.filter_by(email=data['email']).first():
+            return jsonify({'error': 'Email already exists'}), 400
+        
         # Create new user
-        user=User( # Make sure User is imported
+        user = User(
             username=data['username'],
             name=data['name'],
             email=data['email'],
-            user_type=data['user_type'], # This will correctly set 'manager' from the image data
+            user_type=data['user_type'],
             target_hours=data.get('target_hours', 40.0),
             active=data.get('active', True)
         )
-
+        
         # Set password
         user.set_password(data['password'])
-
+        
         # Add capable roles if provided
         if 'capable_roles' in data and data['capable_roles']:
-             roles = Role.query.filter(Role.id.in_(data['capable_roles'])).all() # Make sure Role is imported
-             user.capable_roles = roles
-
+            roles = Role.query.filter(Role.id.in_(data['capable_roles'])).all()
+            user.capable_roles = roles
+        
         # Save to database
-        db.session.add(user) # Make sure db is imported/available
+        db.session.add(user)
         db.session.commit()
-
+        
         # Serialize and return created user
         result = schema.dump(user)
-
+        
         return jsonify(result), 201
-
-    except ValidationError as e: # Make sure ValidationError is imported (from marshmallow?)
+    
+    except ValidationError as e:
         return jsonify({'error': e.messages}), 400
     except Exception as e:
-        db.session.rollback() # Make sure db is imported/available
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
     
 
@@ -150,7 +150,7 @@ def update_user(user_id):
         
         # Check permissions
 
-        is_manager = identity['type'] == ' manager'
+        is_manager = identity['type'] == 'manager'
         is_self = identity['id'] == user_id
 
         if not(is_manager or is_self):

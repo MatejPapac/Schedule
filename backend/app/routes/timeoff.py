@@ -33,9 +33,9 @@ def get_time_off_requests():
 
             status = request.args.get('status')
             if status:
-                request = TimeOffRequest.query.filter_by(status=status).all()
+                requests = TimeOffRequest.query.filter_by(status=status).all()
             else:
-                request = TimeOffRequest.query.all()
+                requests = TimeOffRequest.query.all()
         else:
 
             # Employees can only see their own requests
@@ -93,7 +93,7 @@ def create_time_off_reguest():
         # Validate request data
 
         schema = TimeOffRequestSchema()
-        data = schema.load(request.json, context={'start_time': request.json.get('start_time')})
+        data = schema.load(request.json)
 
         # Only managers can create requests for other users
 
