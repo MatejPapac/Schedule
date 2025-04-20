@@ -178,7 +178,7 @@ def update_shift(shift_id):
         
         # Validate request data
         schema = AssignedShiftSchema()
-        data = schema.load(request.json, partial=True, context={'start_time': request.json.get('start_time', shift.start_time)})
+        data = schema.load(request.json, partial=True)
         
         # Check if we're updating user or role
         new_user_id = data.get('user_id', shift.user_id)
@@ -290,8 +290,7 @@ def generate_schedule():
         
         # Validate request data
         schema = ScheduleGenerationSchema()
-        data = schema.load(request.json, context={'start_date': request.json.get('start_date')})
-        
+        data = schema.load(request.json)
         start_date = data['start_date']
         end_date = data['end_date']
         

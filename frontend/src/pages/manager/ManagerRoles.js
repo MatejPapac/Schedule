@@ -9,7 +9,7 @@ import {
   List,
   ListItem,
   ListItemText,
-  secondaryAction,
+  SecondaryAction,
   IconButton,
   Dialog,
   DialogActions,
@@ -56,6 +56,7 @@ const ManagerRoles = () => {
       
       try {
         const response = await roleAPI.getRoles();
+        console.log('Fetched roles:', response.data);
         setRoles(response.data);
       } catch (err) {
         console.error('Error fetching roles:', err);

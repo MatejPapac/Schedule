@@ -46,6 +46,7 @@ const ManagerUsers = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   
   // User dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -68,30 +69,39 @@ const ManagerUsers = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
   
-  // Fetch users and roles
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError('');
-      
-      try {
-        // Fetch all users
-        const usersRes = await userAPI.getUsers();
-        setUsers(usersRes.data);
-        
-        // Fetch all roles
-        const rolesRes = await roleAPI.getRoles();
-        setRoles(rolesRes.data);
-      } catch (err) {
-        console.error('Error fetching data:', err);
-        setError('Failed to load data. Please try again later.');
-      } finally {
-        setLoading(false);
-      }
-    };
+  // useEffect for debouncing the search term
+useEffect(() => {
+  const timer = setTimeout(() => {
+    setDebouncedSearchTerm(searchTerm);
+  }, 300);
+  
+  return () => clearTimeout(timer);
+}, [searchTerm]);
+
+//  useEffect for fetching data
+useEffect(() => {
+  const fetchData = async () => {
+    setLoading(true);
+    setError('');
     
-    fetchData();
-  }, []);
+    try {
+      // Fetch all users
+      const usersRes = await userAPI.getUsers();
+      setUsers(usersRes.data);
+      
+      // Fetch all roles
+      const rolesRes = await roleAPI.getRoles();
+      setRoles(rolesRes.data);
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError('Failed to load data. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  fetchData();
+}, []);
   
   // Handler for opening the new user dialog
   const handleNewUser = () => {
@@ -114,7 +124,7 @@ const ManagerUsers = () => {
     setEditingUser(user);
     setDialogTitle('Edit User');
     setUsername(user.username);
-    setPassword(''); // Don't populate password field
+    setPassword(''); 
     setName(user.name);
     setEmail(user.email);
     setUserType(user.user_type);
@@ -123,6 +133,7 @@ const ManagerUsers = () => {
     setCapableRoles(user.capable_roles || []);
     setFormError('');
     setDialogOpen(true);
+    setSearchTerm('');
   };
   
   // Handler for closing the user dialog
@@ -143,7 +154,6 @@ const ManagerUsers = () => {
     
     try {
       const userData = {
-        username,
         name,
         email,
         user_type: userType,
@@ -167,7 +177,8 @@ const ManagerUsers = () => {
       
       // Close dialog and refresh data
       handleCloseDialog();
-      
+      setSearchTerm('');
+
       // Refresh users
       const usersRes = await userAPI.getUsers();
       setUsers(usersRes.data);
@@ -206,9 +217,9 @@ const ManagerUsers = () => {
   
   // Filter users based on search term
   const filteredUsers = users.filter(user => 
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+    user.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+    user.username.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+    user.email.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
   );
   
   // Get role name by id

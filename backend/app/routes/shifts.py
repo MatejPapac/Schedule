@@ -137,7 +137,7 @@ def update_shift_requirement(requirement_id):
         # Validate request data
 
         schema = ShiftRequirement.query.get(requirement_id)
-        data = schema.load(request.json, partial=True, context={'start_time': request.json.get('start_time',requirement.start_time)})
+        data = schema.load(request.json, partial=True)
 
         # Update fields
         if 'start_time' in data:
