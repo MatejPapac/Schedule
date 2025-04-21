@@ -115,3 +115,29 @@ class WorkHoursLog(db.Model):
     user = db.relationship('User', backref=db.backref('work_hours_logs', lazy='dynamic'))
     shift = db.relationship('AssignedShift', backref=db.backref('work_hours_log', uselist=False))
     role = db.relationship('Role', backref=db.backref('work_hours_logs', lazy='dynamic'))
+
+
+class RecurringShiftTemplate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    role_id = db.Column(db.Integer, db.ForeignKey('role.id'), nullable=False)
+    start_time = db.Column(db.Time, nullable=False)  # Just time, no date
+    end_time = db.Column(db.Time, nullable=False)  # Just time, no date
+    employee_count = db.Column(db.Integer, nullable=False, default=1)
+    
+    # Recurrence pattern
+    monday = db.Column(db.Boolean, default=False)
+    tuesday = db.Column(db.Boolean, default=False)
+    wednesday = db.Column(db.Boolean, default=False)
+    thursday = db.Column(db.Boolean, default=False)
+    friday = db.Column(db.Boolean, default=False)
+    saturday = db.Column(db.Boolean, default=False)
+    sunday = db.Column(db.Boolean, default=False)
+    
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    role = db.relationship('Role', backref=db.backref('recurring_templates', lazy='dynamic'))
+
+    

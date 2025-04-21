@@ -20,6 +20,7 @@ import ManagerTimeOff from './pages/manager/ManagerTimeOff';
 import NotFound from './pages/NotFound';
 import EmployeeStatistics from './pages/employee/EmployeeStatistics';
 import ManagerStatistics from './pages/manager/ManagerStatistics';
+import ManagerRecurringTemplates from './pages/manager/ManagerRecurringTemplates';
 
 // Create theme
 const theme = createTheme({
@@ -134,6 +135,11 @@ function App() {
             <Route path="/manager/statistics" element={
                 <ProtectedRoute requiredRole="manager">
                 <ManagerStatistics />
+            </ProtectedRoute>
+          } />
+          <Route path="/manager/recurring-templates" element={
+            <ProtectedRoute requiredRole="manager">
+              <ManagerRecurringTemplates />
             </ProtectedRoute>
           } />
             

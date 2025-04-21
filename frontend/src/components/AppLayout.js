@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Repeat as RecurringIcon } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   AppBar, 
@@ -67,6 +68,7 @@ const AppLayout = ({ children, title }) => {
         { text: 'Users', icon: <UsersIcon />, path: '/manager/users' },
         { text: 'Roles', icon: <RolesIcon />, path: '/manager/roles' },
         { text: 'Shift Requirements', icon: <RequirementsIcon />, path: '/manager/requirements' },
+        { text: 'Recurring Shifts', icon: <RecurringIcon />, path: '/manager/recurring-templates' },
         { text: 'Time Off Requests', icon: <TimeOffIcon />, path: '/manager/time-off' },
       ]
     : [

@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields, validate, validates, ValidationError
+from marshmallow import Schema, fields, validate, validates_schema,validates, ValidationError
 from datetime import datetime
 
 class UserSchema(Schema):
@@ -122,3 +122,44 @@ class ScheduleGenerationSchema(Schema):
         start_date = self.context.get('start_date')
         if start_date and end_date <= start_date:
             raise ValidationError('End date must be after start date')
+# Add to app/schemas.py
+
+class RecurringShiftTemplateSchema(Schema):
+    id = fields.Int(dump_only=True)
+    role_id = fields.Int(required=True)
+    start_time = fields.Time(required=True)
+    end_time = fields.Time(required=True)
+    employee_count = fields.Int(required=True, validate=validate.Range(min=1))
+    
+    # Recurrence pattern
+    monday = fields.Bool(missing=False)
+    tuesday = fields.Bool(missing=False)
+    wednesday = fields.Bool(missing=False)
+    thursday = fields.Bool(missing=False)
+    friday = fields.Bool(missing=False)
+    saturday = fields.Bool(missing=False)
+    sunday = fields.Bool(missing=False)
+    
+    is_active = fields.Bool(missing=True)
+    created_at = fields.DateTime(dump_only=True)
+    updated_at = fields.DateTime(dump_only=True)
+    
+    @validates('end_time')
+    def validate_end_time(self, end_time, **kwargs):
+        start_time = self.context.get('start_time')
+        if start_time and end_time <= start_time:
+            raise ValidationError('End time must be after start time')
+            
+    # Helper method to check if at least one day is selected
+    @validates_schema
+    def validate_days(self, data, **kwargs):
+        if not any([
+            data.get('monday', False),
+            data.get('tuesday', False),
+            data.get('wednesday', False),
+            data.get('thursday', False),
+            data.get('friday', False),
+            data.get('saturday', False),
+            data.get('sunday', False)
+        ]):
+            raise ValidationError('At least one day of the week must be selected')

@@ -131,3 +131,25 @@ export const statsAPI = {
   // Efficiency metrics
   getEfficiencyMetrics: (params) => axios.get(`${API_URL}/statistics/efficiency`, { params })
 };
+
+// Recurring shift template API calls
+export const recurringTemplateAPI = {
+  // Get all recurring templates (manager only)
+  getRecurringTemplates: (params) => axios.get(`${API_URL}/recurring-templates`, { params }),
+  
+  // Get recurring template by ID (manager only)
+  getRecurringTemplate: (templateId) => axios.get(`${API_URL}/recurring-templates/${templateId}`),
+  
+  // Create new recurring template (manager only)
+  createRecurringTemplate: (templateData) => axios.post(`${API_URL}/recurring-templates`, templateData),
+  
+  // Update recurring template (manager only)
+  updateRecurringTemplate: (templateId, templateData) => 
+    axios.put(`${API_URL}/recurring-templates/${templateId}`, templateData),
+  
+  // Delete recurring template (manager only)
+  deleteRecurringTemplate: (templateId) => axios.delete(`${API_URL}/recurring-templates/${templateId}`),
+  
+  // Generate shift requirements from templates (manager only)
+  generateShiftRequirements: (data) => axios.post(`${API_URL}/recurring-templates/generate`, data)
+};
