@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from marshmallow import ValidationError
 from datetime import datetime, timedelta
 from app import db
-from app.models.models import User, Role, AssignedShift, ShiftRequirement, TimeOffRequest
+from app.models.models import User, Role, AssignedShift, ShiftRequirement, TimeOffRequest,WorkHoursLog
 from app.schemas import AssignedShiftSchema, ScheduleGenerationSchema
 import random
 
@@ -406,6 +406,48 @@ def generate_schedule():
     
     except ValidationError as e:
         return jsonify({'error': e.messages}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+    
+
+@schedules_bp.route('/<int:shift_id>/complete', methods=['POST'])
+@jwt_required()
+def complete_shift(shift_id):
+    try:
+        # Get identity from token
+        identity = get_jwt_identity()
+        
+        # Get shift from database
+        shift = AssignedShift.query.get(shift_id)
+        
+        if not shift:
+            return jsonify({'error': 'Shift not found'}), 404
+        
+        # Check if user is completing their own shift or is a manager
+        if identity['id'] != shift.user_id and identity['type'] != 'manager':
+            return jsonify({'error': 'Unauthorized access'}), 403
+        
+        # Calculate hours worked
+        start_time = shift.start_time
+        end_time = shift.end_time
+        hours_worked = (end_time - start_time).total_seconds() / 3600
+        
+        # Log hours worked
+        log_entry = WorkHoursLog(
+            user_id=shift.user_id,
+            shift_id=shift.id,
+            date=shift.start_time.date(),
+            hours_worked=hours_worked,
+            role_id=shift.role_id
+        )
+        
+        # Save to database
+        db.session.add(log_entry)
+        db.session.commit()
+        
+        return jsonify({'message': 'Shift completed and hours logged', 'hours_worked': hours_worked}), 200
+    
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500

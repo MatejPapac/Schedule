@@ -39,6 +39,7 @@ def create_app(config=None):
     from app.routes.schedules import schedules_bp
     from app.routes.timeoff import timeoff_bp
     from app.routes.preferences import preferences_bp
+    from app.routes.statistics import stats_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(users_bp, url_prefix='/api/users')
@@ -47,6 +48,7 @@ def create_app(config=None):
     app.register_blueprint(schedules_bp, url_prefix='/api/schedules')
     app.register_blueprint(timeoff_bp, url_prefix='/api/timeoff')
     app.register_blueprint(preferences_bp, url_prefix='/api/preferences')
+    app.register_blueprint(stats_bp,url_prefix='/api/statistics')
     
     # Create database tables
     with app.app_context():

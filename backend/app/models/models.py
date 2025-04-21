@@ -101,3 +101,17 @@ class AssignedShift(db.Model):
     end_time = db.Column(db.DateTime, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+class WorkHoursLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    shift_id = db.Column(db.Integer, db.ForeignKey('assigned_shift.id'), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    hours_worked = db.Column(db.Float, nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey('role.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('work_hours_logs', lazy='dynamic'))
+    shift = db.relationship('AssignedShift', backref=db.backref('work_hours_log', uselist=False))
+    role = db.relationship('Role', backref=db.backref('work_hours_logs', lazy='dynamic'))

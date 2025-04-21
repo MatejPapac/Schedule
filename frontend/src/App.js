@@ -18,6 +18,8 @@ import ManagerRoles from './pages/manager/ManagerRoles';
 import ManagerShiftRequirements from './pages/manager/ManagerShiftRequirements';
 import ManagerTimeOff from './pages/manager/ManagerTimeOff';
 import NotFound from './pages/NotFound';
+import EmployeeStatistics from './pages/employee/EmployeeStatistics';
+import ManagerStatistics from './pages/manager/ManagerStatistics';
 
 // Create theme
 const theme = createTheme({
@@ -79,6 +81,12 @@ function App() {
                 <EmployeeTimeOff />
               </ProtectedRoute>
             } />
+
+            <Route path="/statistics" element={
+              <ProtectedRoute>
+                <EmployeeStatistics />
+              </ProtectedRoute>
+            } />
             
             {/* Manager Routes */}
             <Route path="/manager/schedule" element={
@@ -116,6 +124,18 @@ function App() {
                 <ManagerTimeOff />
               </ProtectedRoute>
             } />
+            
+            <Route path="/manager/statistics" element={
+                <ProtectedRoute requiredRole="manager">
+                <ManagerStatistics />
+            </ProtectedRoute>
+            } />
+            
+            <Route path="/manager/statistics" element={
+                <ProtectedRoute requiredRole="manager">
+                <ManagerStatistics />
+            </ProtectedRoute>
+          } />
             
             <Route path="/" element={<Navigate to="/dashboard" />} />
             <Route path="*" element={<NotFound />} />

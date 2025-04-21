@@ -118,3 +118,16 @@ export const scheduleAPI = {
   // Generate a schedule (manager only)
   generateSchedule: (params) => axios.post(`${API_URL}/schedules/generate`, params)
 };
+
+export const statsAPI = {
+  // User-specific endpoints
+  getUserHours: (userId, params) => axios.get(`${API_URL}/statistics/user/${userId}/hours`, { params }),
+  
+  // Role-based endpoints
+  getRoleHours: (params) => axios.get(`${API_URL}/statistics/roles/hours`, { params }),
+  getRoleDistribution: (params) => axios.get(`${API_URL}/statistics/roles/distribution`, { params }),
+  getRoleDetails: (roleId, params) => axios.get(`${API_URL}/statistics/roles/${roleId}/details`, { params }),
+  
+  // Efficiency metrics
+  getEfficiencyMetrics: (params) => axios.get(`${API_URL}/statistics/efficiency`, { params })
+};
