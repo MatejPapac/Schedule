@@ -41,6 +41,7 @@ def create_app(config=None):
     from app.routes.preferences import preferences_bp
     from app.routes.statistics import stats_bp
     from app.routes.recurring_templates import recurring_templates_bp
+    from app.routes.scheduling import scheduling_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(users_bp, url_prefix='/api/users')
@@ -51,6 +52,8 @@ def create_app(config=None):
     app.register_blueprint(preferences_bp, url_prefix='/api/preferences')
     app.register_blueprint(stats_bp,url_prefix='/api/statistics')
     app.register_blueprint(recurring_templates_bp, url_prefix='/api/recurring-templates')
+    app.register_blueprint(scheduling_bp, url_prefix='/api/scheduling')
+
     
     # Create database tables
     with app.app_context():

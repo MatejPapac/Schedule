@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Dict, Set, Optional
@@ -119,29 +118,26 @@ class Schedule:
         
         # Check max hours
         hours = self.get_employee_hours()
-        for emp_id, worked_hours in hours.times():
+        for emp_id, worked_hours in hours.items():
             emp = next(e for e in self.employees if e.id == emp_id)
             if worked_hours > emp.max_hours:
                 violations["max_hours_exceeded"] += 1
-
-        # Check for qualifications
-
+        
+        # Check qualifications
         for shift_idx, shift in enumerate(self.shifts):
             for emp_idx, employee in enumerate(self.employees):
-                if self.assigments[shift_idx,emp_idx] == 1:
-                    if self.role_id not in employee.skills:
-                        violations['unqualified_roles'] += 1
-
-        # Check for unfilled shifts
-
+                if self.assignments[shift_idx, emp_idx] == 1:
+                    if shift.role_id not in employee.skills:
+                        violations["unqualified_roles"] += 1
+        
+        # Check unfilled shifts
         for shift_idx, shift in enumerate(self.shifts):
             assigned = sum(self.assignments[shift_idx])
             if assigned < shift.required_staff:
                 violations["unfilled_shifts"] += 1
         
-        return  violations
+        return violations
     
-
     def to_dict(self) -> List[Dict]:
         """Convert schedule to dictionary format."""
         result = []

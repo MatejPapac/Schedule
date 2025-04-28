@@ -107,7 +107,6 @@ class SchedulingGA:
         
         return population
     
-
     def calculate_employee_hours(self, schedule: np.ndarray) -> Dict[str, float]:
         """Calculate the total hours assigned to each employee."""
         employee_hours = {emp.id: 0.0 for emp in self.employees}
@@ -120,7 +119,6 @@ class SchedulingGA:
         
         return employee_hours
     
-
     def calculate_fitness(self, schedule: np.ndarray) -> float:
         """
         Calculate fitness score for a schedule.
@@ -200,3 +198,171 @@ class SchedulingGA:
         fitness = coverage_score + hours_balance_score + preference_score - constraint_penalties
         
         return max(0, fitness)  # Ensure non-negative fitness
+    
+    def tournament_select(self, population: List[np.ndarray], fitness_scores: List[float]) -> np.ndarray:
+        """Select a schedule using tournament selection."""
+        # Randomly select tournament_size schedules
+        tournament_indices = random.sample(range(len(population)), self.tournament_size)
+        tournament_fitness = [fitness_scores[i] for i in tournament_indices]
+        
+        # Select the best one
+        winner_idx = tournament_indices[np.argmax(tournament_fitness)]
+        return population[winner_idx].copy()
+    
+    def crossover(self, parent1: np.ndarray, parent2: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Perform crossover between two parent schedules."""
+        if random.random() > self.crossover_rate:
+            return parent1.copy(), parent2.copy()
+        
+        # Perform single-point crossover by shift
+        crossover_point = random.randint(1, len(self.shifts) - 1)
+        
+        child1 = np.vstack([parent1[:crossover_point], parent2[crossover_point:]])
+        child2 = np.vstack([parent2[:crossover_point], parent1[crossover_point:]])
+        
+        return child1, child2
+    
+    def mutate(self, schedule: np.ndarray) -> np.ndarray:
+        """Mutate a schedule by randomly changing some shift assignments."""
+        mutated = schedule.copy()
+        
+        # For each shift, there's a chance of mutation
+        for shift_idx, shift in enumerate(self.shifts):
+            if random.random() < self.mutation_rate:
+                # Get the required staff for this shift
+                required = shift.required_staff
+                duration = shift.duration
+                
+                # Clear current assignments for this shift
+                mutated[shift_idx] = np.zeros(len(self.employees))
+                
+                # Calculate current hours for each employee (excluding this shift)
+                current_hours = self.calculate_employee_hours(mutated)
+                
+                # Find eligible employees
+                eligible = []
+                for emp_idx, emp in enumerate(self.employees):
+                    if (shift.role_id in emp.skills and 
+                        current_hours[emp.id] + duration <= emp.max_hours):
+                        eligible.append(emp_idx)
+                
+                # Randomly assign up to the required number
+                if eligible and required > 0:
+                    to_assign = min(len(eligible), required)
+                    assigned = random.sample(eligible, to_assign)
+                    
+                    for emp_idx in assigned:
+                        mutated[shift_idx][emp_idx] = 1
+        
+        return mutated
+    
+    def run(self, time_limit_seconds: Optional[int] = None) -> Tuple[Schedule, float, Dict[str, Any]]:
+        """
+        Run the genetic algorithm to find a good schedule.
+        
+        Args:
+            time_limit_seconds: Optional time limit in seconds
+            
+        Returns:
+            Tuple of (best_schedule, best_fitness, stats)
+        """
+        start_time = time.time()
+        
+        # Create initial population
+        population = self.create_initial_population()
+        
+        # Track the best schedule
+        best_schedule_matrix = None
+        best_fitness = -1
+        
+        # Stats for tracking progress
+        stats = {
+            "fitness_history": [],
+            "coverage_history": [],
+            "generation_times": [],
+            "total_generations": 0
+        }
+        
+        for generation in range(self.generations):
+            gen_start_time = time.time()
+            
+            # Check time limit if specified
+            if time_limit_seconds and (time.time() - start_time) > time_limit_seconds:
+                logger.info(f"Time limit reached after {generation} generations")
+                break
+            
+            # Evaluate fitness for each schedule
+            fitness_scores = [self.calculate_fitness(schedule) for schedule in population]
+            
+            # Find the best schedule in this generation
+            best_idx = np.argmax(fitness_scores)
+            generation_best_fitness = fitness_scores[best_idx]
+            
+            # Track stats
+            stats["fitness_history"].append(generation_best_fitness)
+            
+            # Create a Schedule object to calculate coverage
+            temp_schedule = Schedule(self.employees, self.shifts)
+            temp_schedule.assignments = population[best_idx]
+            coverage = temp_schedule.calculate_coverage()
+            stats["coverage_history"].append(coverage["coverage_percent"])
+            
+            # Update best overall schedule if improved
+            if generation_best_fitness > best_fitness:
+                best_fitness = generation_best_fitness
+                best_schedule_matrix = population[best_idx].copy()
+                logger.info(f"Generation {generation}: New best fitness = {best_fitness} "
+                           f"(Coverage: {coverage['coverage_percent']:.1f}%)")
+            
+            # Create the next generation
+            next_population = []
+            
+            # Elitism - keep the best schedules
+            elite_indices = np.argsort(fitness_scores)[-self.elite_size:]
+            for idx in elite_indices:
+                next_population.append(population[idx].copy())
+            
+            # Fill the rest of the population with children
+            while len(next_population) < self.population_size:
+                # Select parents
+                parent1 = self.tournament_select(population, fitness_scores)
+                parent2 = self.tournament_select(population, fitness_scores)
+                
+                # Create children through crossover and mutation
+                child1, child2 = self.crossover(parent1, parent2)
+                child1 = self.mutate(child1)
+                child2 = self.mutate(child2)
+                
+                next_population.append(child1)
+                if len(next_population) < self.population_size:
+                    next_population.append(child2)
+            
+            # Replace the old population
+            population = next_population
+            
+            # Track generation time
+            generation_time = time.time() - gen_start_time
+            stats["generation_times"].append(generation_time)
+        
+        # Record total generations completed
+        stats["total_generations"] = len(stats["fitness_history"])
+        stats["total_time"] = time.time() - start_time
+        stats["avg_generation_time"] = stats["total_time"] / stats["total_generations"] if stats["total_generations"] > 0 else 0
+        
+        # Create final Schedule object from the best solution
+        final_schedule = Schedule(self.employees, self.shifts)
+        if best_schedule_matrix is not None:
+            final_schedule.assignments = best_schedule_matrix
+            
+            # Add final stats
+            coverage = final_schedule.calculate_coverage()
+            stats["final_coverage"] = coverage
+            
+            if self.preferences:
+                stats["preference_satisfaction"] = self.preferences.calculate_satisfaction(final_schedule)
+            
+            hours = final_schedule.get_employee_hours()
+            stats["employee_hours"] = hours
+            stats["hours_std_dev"] = np.std(list(hours.values())) if hours else 0
+        
+        return final_schedule, best_fitness, stats
