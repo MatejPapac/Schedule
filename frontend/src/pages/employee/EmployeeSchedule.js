@@ -8,7 +8,8 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  useTheme
 } from '@mui/material';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
@@ -31,13 +32,24 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-const EmployeeSchedule = () => {
+// Define role colors for the calendar
+const roleColors = {
+  1: '#4285F4', // Blue
+  2: '#34A853', // Green
+  3: '#FBBC05', // Yellow
+  4: '#EA4335', // Red
+  5: '#8E24AA', // Purple
+  default: '#9E9E9E' // Grey (default)
+};
+
+const ModernEmployeeSchedule = () => {
   const { user } = useAuth();
   const [shifts, setShifts] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [viewPeriod, setViewPeriod] = useState('current');
+  const theme = useTheme();
   
   // Calculate date ranges based on the selected view period
   const getDateRange = () => {
@@ -93,7 +105,8 @@ const EmployeeSchedule = () => {
             title: role ? role.name : 'Unknown Role',
             start: new Date(shift.start_time),
             end: new Date(shift.end_time),
-            roleId: shift.role_id
+            roleId: shift.role_id,
+            resource: role ? role.name : 'Unknown'
           };
         });
         
@@ -111,14 +124,29 @@ const EmployeeSchedule = () => {
     }
   }, [user, viewPeriod]);
   
-  // Custom event component to show shift details
+  // Custom event component to show shift details with role colors
   const EventComponent = ({ event }) => {
-    const role = roles.find(r => r.id === event.roleId);
+    const backgroundColor = roleColors[event.roleId] || roleColors.default;
     
     return (
-      <div>
+      <div 
+        style={{ 
+          backgroundColor,
+          color: '#fff',
+          borderRadius: '4px',
+          padding: '4px 8px',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)',
+          transition: 'all 0.3s cubic-bezier(.25,.8,.25,1)'
+        }}
+      >
         <strong>{event.title}</strong>
-        <p>{format(event.start, 'h:mm a')} - {format(event.end, 'h:mm a')}</p>
+        <span style={{ fontSize: '0.85rem' }}>
+          {format(event.start, 'h:mm a')} - {format(event.end, 'h:mm a')}
+        </span>
       </div>
     );
   };
@@ -126,6 +154,43 @@ const EmployeeSchedule = () => {
   // Handle view period change
   const handleViewPeriodChange = (event) => {
     setViewPeriod(event.target.value);
+  };
+  
+  // Custom calendar styles
+  const calendarStyles = {
+    height: 600,
+    '& .rbc-today': {
+      backgroundColor: theme.palette.primary.light + '20', // Light version of primary color
+    },
+    '& .rbc-header': {
+      padding: '10px 3px',
+      fontWeight: 'bold',
+      borderBottom: '1px solid #ddd'
+    },
+    '& .rbc-month-view': {
+      borderRadius: '8px',
+      overflow: 'hidden',
+      border: '1px solid #e0e0e0'
+    },
+    '& .rbc-day-bg': {
+      transition: 'all 0.2s ease'
+    },
+    '& .rbc-day-bg:hover': {
+      backgroundColor: theme.palette.grey[100]
+    },
+    '& .rbc-off-range-bg': {
+      backgroundColor: theme.palette.grey[50]
+    },
+    '& .rbc-date-cell': {
+      padding: '5px 10px',
+      textAlign: 'center',
+      fontWeight: 500
+    },
+    '& .rbc-event': {
+      borderRadius: '4px',
+      border: 'none',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)'
+    }
   };
   
   return (
@@ -160,7 +225,7 @@ const EmployeeSchedule = () => {
           {error}
         </Alert>
       ) : (
-        <Paper sx={{ p: 2, height: 600 }}>
+        <Paper sx={{ p: 2, ...calendarStyles }}>
           <Calendar
             localizer={localizer}
             events={shifts}
@@ -176,8 +241,32 @@ const EmployeeSchedule = () => {
           />
         </Paper>
       )}
+      
+      {/* Legend for role colors */}
+      <Box sx={{ mt: 3, display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+        {roles.map(role => (
+          <Box 
+            key={role.id} 
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              gap: 1
+            }}
+          >
+            <Box 
+              sx={{ 
+                width: 16, 
+                height: 16, 
+                borderRadius: '50%',
+                backgroundColor: roleColors[role.id] || roleColors.default
+              }} 
+            />
+            <Typography variant="body2">{role.name}</Typography>
+          </Box>
+        ))}
+      </Box>
     </AppLayout>
   );
 };
 
-export default EmployeeSchedule;
+export default ModernEmployeeSchedule;

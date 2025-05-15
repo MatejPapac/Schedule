@@ -6,7 +6,7 @@ from app import db
 from app.models.models import User, Role, AssignedShift, ShiftRequirement, TimeOffRequest,WorkHoursLog
 from app.schemas import AssignedShiftSchema, ScheduleGenerationSchema
 import random
-
+import numpy as np
 schedules_bp = Blueprint('schedules', __name__)
 
 # Helper function to check if user is manager
@@ -283,133 +283,555 @@ def delete_shift(shift_id):
 @schedules_bp.route('/generate', methods=['POST'])
 @jwt_required()
 def generate_schedule():
+    """
+    Generate a schedule using a genetic algorithm based on real data.
+    """
+
+    # Check if user is a manager
+    if not check_manager():
+        return jsonify({'error' : 'Unauthorized access'}), 403
+    
     try:
-        # Check if user is a manager
-        if not check_manager():
-            return jsonify({'error': 'Unauthorized access'}), 403
+        # Parse request data
+
+        data = request.json or {}
+
+        #Algorithm parameters
+        algorithm_params = data.get('algorithm_params', {
+            'population_size': 50,
+            'generations': 100,
+            'mutation_rate': 0.1,
+            'crossover_rate': 0.8,
+            'elitism_count': 5
+        })
+        time_limit_seconds = data.get('time_limit_seconds', 60)
+
         
-        # Validate request data
-        schema = ScheduleGenerationSchema()
-        data = schema.load(request.json)
-        start_date = data['start_date']
-        end_date = data['end_date']
+
+        # Get date range
+
+        start_date_str = data.get('start_date')
+        end_date_str = data.get('end_date')
+
+        if not start_date_str or not end_date_str:
+            return jsonify({'error': 'Start date and end date are required'}), 400
         
-        # First, clear any existing assignments in the date range
+        start_date = datetime.fromisoformat(start_date_str)
+        end_date = datetime.fromisoformat(end_date_str)
+
+        # Get employees (active users with their roles)
+
+        users = User.query.filter_by(active=True).all()
+
+        # Convert your user model to dictionary format for easier proccesing
+
+        employees=[]
+        for user in users:
+            employee={
+                'id': user.id,
+                'name': user.name,
+                'max_hours': user.target_hours,
+                'skills': [role.id for role in user.capable_roles],
+                'assigned_shifts': []
+            }
+            employees.append(employee)
+
+            # Query requirements in the date range
+        requirements = ShiftRequirement.query.filter(
+            ShiftRequirement.start_time >= start_date,
+            ShiftRequirement.end_time <= end_date
+        ).all()
+        
+        if not requirements:
+            return jsonify({'error': 'No shift requirements found for the selected period'}), 404
+        
+        shifts = []
+        for req in requirements:
+            # Convert your ShiftRequirement model to dictionary
+            shift = {
+                'id': req.id,
+                'start_time': req.start_time,
+                'end_time': req.end_time,
+                'role_id': req.role_id,
+                'required_staff': req.employee_count,
+                'assigned_employees': []  
+            }
+            shifts.append(shift)
+        # Get approved time off requests
+        time_off_requests = TimeOffRequest.query.filter_by(status='approved').filter(
+            TimeOffRequest.user_id.in_([user.id for user in users]),
+            TimeOffRequest.start_time < end_date,
+            TimeOffRequest.end_time > start_date
+        ).all()
+        
+        # Process time off requests into a more usable format
+        time_off_map = {}
+        for tor in time_off_requests:
+            if tor.user_id not in time_off_map:
+                time_off_map[tor.user_id] = []
+            time_off_map[tor.user_id].append({
+                'start_time': tor.start_time,
+                'end_time': tor.end_time
+            })
+
+            from app.models.models import UserRolePreference,UserDayPreference
+
+            # Get role preferences
+        role_preferences = {}
+        role_prefs = UserRolePreference.query.filter(
+            UserRolePreference.user_id.in_([user.id for user in users])
+        ).all()
+        
+        for pref in role_prefs:
+            if pref.user_id not in role_preferences:
+                role_preferences[pref.user_id] = {}
+            role_preferences[pref.user_id][pref.role_id] = pref.preference_level
+        
+        # Get day preferences
+        day_preferences = {}
+        day_prefs = UserDayPreference.query.filter(
+            UserDayPreference.user_id.in_([user.id for user in users])
+        ).all()
+        
+        for pref in day_prefs:
+            if pref.user_id not in day_preferences:
+                day_preferences[pref.user_id] = {}
+            day_preferences[pref.user_id][pref.day_of_week] = pref.preference_level
+
+
+        # Now implementing the genetic algorithm
+        # 1. Define fitness function
+
+        def calculate_fitness(schedule):
+            # Schedule is a list of shift assigments(Employee_Id or None for each required position)
+
+            filled_positions = sum(1 for employee_id in schedule if employee_id is not None)
+            total_positions = sum(shift['required_staff'] for shift in shifts)
+
+            # Calculate coverage ratio (primary objective)
+            coverage_ratio = filled_positions / total_positions if total_positions > 0 else 0
+            
+            # Calculate penalties for constraint violations
+            penalty = 0
+
+            # Reconstruct the full schedule from the chromosome
+            reconstructed_schedule = get_reconstructed_schedule(schedule)
+
+            # Cjeck for time off violations
+            time_off_violations = 0
+            for emp_id,emp_shifts in reconstructed_schedule.items():
+                if emp_id in time_off_map:
+                    for time_off in time_off_map[emp_id]:
+                        for shift_id in emp_shifts:_
+                        shift = next((s for s in shifts if s['id'] == shift_id), None)
+                        if shift and check_overlap(shift['start_time'], shift['end_time'], 
+                                                     time_off['start_time'], time_off['end_time']):
+                                time_off_violations += 1
+            # Heavy penalty for time-off violations
+            penalty += time_off_violations * 0.5
+
+
+            # Check for role capability violations
+            role_violations = 0
+            for emp_id, emp_shifts in reconstructed_schedule.items():
+                employee = next((e for e in employees if e['id'] == emp_id), None)
+                if employee:
+                    for shift_id in emp_shifts:
+                        shift = next((s for s in shifts if s['id'] == shift_id), None)
+                        if shift and shift['role_id'] not in employee['skills']:
+                            role_violations += 1
+            
+            # Heavy penalty for role violations
+            penalty += role_violations * 0.5
+            
+            # Check for overlapping shifts for same employee
+            overlap_violations = 0
+            for emp_id, emp_shifts in reconstructed_schedule.items():
+                emp_shift_objects = [next((s for s in shifts if s['id'] == shift_id), None) 
+                                    for shift_id in emp_shifts]
+                emp_shift_objects = [s for s in emp_shift_objects if s is not None]
+                
+                # Check each pair of shifts for overlap
+                for i in range(len(emp_shift_objects)):
+                    for j in range(i+1, len(emp_shift_objects)):
+                        if check_overlap(emp_shift_objects[i]['start_time'], emp_shift_objects[i]['end_time'],
+                                       emp_shift_objects[j]['start_time'], emp_shift_objects[j]['end_time']):
+                            overlap_violations += 1
+            
+            # Heavy penalty for overlap violations
+            penalty += overlap_violations * 0.5
+
+            assigned_hours = {}
+            for emp_id, emp_shifts in reconstructed_schedule.items():
+                assigned_hours[emp_id] = 0
+                for shift_id in emp_shifts:
+                    shift = next((s for s in shifts if s['id'] == shift_id), None)
+                    if shift:
+                        duration = (shift['end_time'] - shift['start_time']).total_seconds() / 3600  # hours
+                        assigned_hours[emp_id] += duration
+            
+            # Calculate hours balance penalty
+            hours_penalty = 0
+            if assigned_hours:
+                max_hours = max(assigned_hours.values()) if assigned_hours else 0
+                min_hours = min(assigned_hours.values()) if assigned_hours else 0
+                hours_penalty = (max_hours - min_hours) / 40 * 0.1  # Normalize and scale down
+            
+            # Calculate preference satisfaction (secondary objective)
+            preference_score = 0
+            for emp_id, emp_shifts in reconstructed_schedule.items():
+                for shift_id in emp_shifts:
+                    shift = next((s for s in shifts if s['id'] == shift_id), None)
+                    if shift:
+                        # Role preference
+                        if emp_id in role_preferences and shift['role_id'] in role_preferences[emp_id]:
+                            # Convert 1-5 scale to 0-1 scale (5 being most preferred)
+                            pref_value = (role_preferences[emp_id][shift['role_id']] - 1) / 4
+                            preference_score += pref_value
+                        
+                        # Day preference
+                        day_of_week = shift['start_time'].weekday()
+                        if emp_id in day_preferences and day_of_week in day_preferences[emp_id]:
+                            pref_value = (day_preferences[emp_id][day_of_week] - 1) / 4
+                            preference_score += pref_value
+            
+            # Normalize preference score
+            total_possible_preferences = len(reconstructed_schedule) * 2  # Both role and day
+            normalized_pref_score = preference_score / total_possible_preferences if total_possible_preferences > 0 else 0
+            
+            # Final fitness value (coverage is primary, preferences are secondary)
+            fitness = coverage_ratio - penalty + (normalized_pref_score * 0.1)  # Preference has smaller weight
+            
+            return max(0, fitness)  # Ensure fitness is not negative
+        
+        # Helper function to check for time overlap
+        def check_overlap(start1, end1, start2, end2):
+            return (start1 < end2) and (end1 > start2)  
+        
+        # Helper function to reconstruct the full schedule from chromosome
+
+        def get_reconstructed_schedule(schedule):
+            result={}
+
+            position_idx = 0 
+            for shift_idx, shift in enumerate(shifts):
+                for _ in range(shift['required_staff']):
+                    employee_id = schedule[position_idx]
+                    if employee_id is not None:
+                        if employee_id not in result:
+                            result[employee_id] = []
+                        result[employee_id].append(shift['id'])
+                    position_idx += 1
+
+            return result
+        
+        # 2. Generate initial population
+        def generate_initial_population(population_size):
+           
+            population = []
+            
+            # Calculate chromosome length (total required positions)
+            total_positions = sum(shift['required_staff'] for shift in shifts)
+            
+            for _ in range(population_size):
+                # Create a new chromosome
+                chromosome = [None] * total_positions
+                
+                # Track assigned shifts per employee to prevent conflicts
+                employee_shifts = {emp['id']: [] for emp in employees}
+                
+                position_idx = 0
+                for shift_idx, shift in enumerate(shifts):
+                    for _ in range(shift['required_staff']):
+                        # Get eligible employees for this shift
+                        eligible_employees = []
+                        for emp in employees:
+                            # Check if employee has the required skill
+                            if shift['role_id'] not in emp['skills']:
+                                continue
+
+                        # Check for time off 
+                        has_time_off = False
+                        if emp['id'] in time_off_map:
+                                for time_off in time_off_map[emp['id']]:
+                                    if check_overlap(shift['start_time'], shift['end_time'], 
+                                                  time_off['start_time'], time_off['end_time']):
+                                        has_time_off = True
+                                        break
+                        if has_time_off:
+                                continue
+                        
+                        # Check for shift overlap with already assigned shifts
+                        has_overlap = False
+                        for assigned_shift_idx in employee_shifts[emp['id']]:
+                                assigned_shift = shifts[assigned_shift_idx]
+                                if check_overlap(shift['start_time'], shift['end_time'],
+                                              assigned_shift['start_time'], assigned_shift['end_time']):
+                                    has_overlap = True
+                                    break
+                        if has_overlap:
+                                continue
+                            
+                        # Employee is eligible
+                        eligible_employees.append(emp['id'])
+
+                        # Randomly assign an eligible employee or leave unassigned
+                        if eligible_employees:
+                            employee_id = random.choice(eligible_employees)
+                            chromosome[position_idx] = employee_id
+                            employee_shifts[employee_id].append(shift_idx)
+
+                        position_idx += 1
+
+                    population.append(chromosome)
+
+            return population
+        
+        # 3. Selection function (tournament selection)
+        def selection(population, fitnesses, tournament_size=3):
+            selected = []
+            
+            for _ in range(len(population)):
+                # Select tournament_size individuals randomly
+                tournament_indices = random.sample(range(len(population)), tournament_size)
+                tournament_fitnesses = [fitnesses[i] for i in tournament_indices]
+                
+                # Select the best individual from the tournament
+                winner_idx = tournament_indices[tournament_fitnesses.index(max(tournament_fitnesses))]
+                selected.append(population[winner_idx])
+            
+            return selected
+        
+        # 4. Crossover function (single-point crossover)
+        def crossover(parent1, parent2, crossover_rate):
+            if random.random() > crossover_rate:
+                return parent1.copy(), parent2.copy()
+            
+            # Single point crossover
+            crossover_point = random.randint(1, len(parent1) - 1)
+            child1 = parent1[:crossover_point] + parent2[crossover_point:]
+            child2 = parent2[:crossover_point] + parent1[crossover_point:]
+            
+            return child1, child2
+        # 5.Mutation function
+        def mutation(chromosome, mutation_rate):
+            mutated = chromosome.copy()
+
+            for i in range(len(mutated)):
+                if random.random() < mutation_rate:
+                    # 50% chance to clear the assignemt
+                    if random.random() < 0.5:
+                        mutated[i]= None
+                    else:
+                        # Find which shift this position corresponds to
+                        position_idx = 0
+                        current_shift_idx = None
+                    
+                        
+                        for shift_idx, shift in enumerate(shifts):
+                            new_position_idx = position_idx + shift['required_staff']
+                            if i < new_position_idx:
+                                current_shift_idx = shift_idx
+                                break
+                            position_idx = new_position_idx
+
+                        if current_shift_idx is not None:
+                            current_shift = shift[current_shift_idx]
+
+                        # Get eligible employee for this shift
+
+                        eligible_employees = []
+                        for emp in employees:
+                            if current_shift['role_id'] in emp['skills']:
+                                eligible_employees.append(emp['id'])
+                        
+                        if eligible_employees:
+                            # Randomly select an eligible employee
+                            mutated[i] = random.choice(eligible_employees)
+            return mutated
+        
+                # 6. The main genetic algorithm loop
+        def genetic_algorithm(time_limit_seconds=60):
+            start_time = datetime.now()
+            
+            # Configuration
+            population_size = algorithm_params.get('population_size', 50)
+            generations = algorithm_params.get('generations', 100)
+            mutation_rate = algorithm_params.get('mutation_rate', 0.1)
+            crossover_rate = algorithm_params.get('crossover_rate', 0.8)
+            elitism_count = algorithm_params.get('elitism_count', 5)
+            
+            # Generate initial population
+            population = generate_initial_population(population_size)
+            
+            # Track the best solution and its fitness
+            best_solution = None
+            best_fitness = -1
+            
+            # Track stats for each generation
+            generation_stats = []
+            
+            # Main loop
+            for generation in range(generations):
+                # Check if time limit is reached
+                if (datetime.now() - start_time).total_seconds() > time_limit_seconds:
+                    break
+                
+                # Calculate fitness for each individual
+                fitnesses = [calculate_fitness(individual) for individual in population]
+
+                # Track the best individual
+                current_best_idx=fitnesses.index(max(fitnesses))
+                current_best_fitness = fitnesses[current_best_idx]
+                current_best_solution = population[current_best_idx]
+
+                # Update the overall best if needed
+                if current_best_fitness > best_fitness:
+                    best_solution = current_best_solution
+                    best_fitness = current_best_fitness
+
+                # Record generation statistics
+                generation_stats.append({
+                    'generation': generation,
+                    'best_fitness': current_best_fitness,
+                    'average_fitness': sum(fitnesses) / len(fitnesses)
+                })
+
+                # Elitism: keep the best individuals
+                elites = []
+                for _ in range(elitism_count):
+                    if fitnesses:
+                        best_idx = fitnesses.index(max(fitnesses))
+                        elites.append(population[best_idx])
+                        fitnesses[best_idx] = -1  
+                         # Selection
+                selected = selection(population, fitnesses)
+                
+                # Create new population through crossover and mutation
+                new_population = []
+                
+                # Add elites directly
+                new_population.extend(elites)
+                
+                # Fill the rest with crossover and mutation
+                while len(new_population) < population_size:
+                    # Select two parents
+                    parent1 = random.choice(selected)
+                    parent2 = random.choice(selected)
+                    
+                    # Crossover
+                    child1, child2 = crossover(parent1, parent2, crossover_rate)
+                    
+                    # Mutation
+                    child1 = mutation(child1, mutation_rate)
+                    child2 = mutation(child2, mutation_rate)
+                    
+                    # Add to new population
+                    new_population.append(child1)
+                    if len(new_population) < population_size:
+                        new_population.append(child2)
+                
+                # Replace old population
+                population = new_population
+            
+            # Return the best solution and statistics
+            execution_time = (datetime.now() - start_time).total_seconds()
+            return best_solution, best_fitness, generation_stats, execution_time
+        
+        # Run the genetic algorithm
+        best_solution, best_fitness, generation_stats, execution_time = genetic_algorithm(time_limit_seconds)
+        
+        # If no solution found
+        if best_solution is None:
+            return jsonify({'error': 'Failed to generate a valid schedule'}), 500
+        
+        # Convert the best solution to the schedule format
+        # Create a mapping of shifts to assigned employees
+        shift_assignments = {}
+        
+        position_idx = 0
+        for shift_idx, shift in enumerate(shifts):
+            shift_assignments[shift['id']] = []
+            for _ in range(shift['required_staff']):
+                employee_id = best_solution[position_idx]
+                if employee_id is not None:
+                    shift_assignments[shift['id']].append(employee_id)
+                position_idx += 1
+        
+        # Clear existing shifts in the database
+        from app import db
+        from app.models.models import AssignedShift
+        
+        # Delete existing shifts in the date range
         existing_shifts = AssignedShift.query.filter(
-            AssignedShift.start_time >= datetime.combine(start_date, datetime.min.time()),
-            AssignedShift.end_time <= datetime.combine(end_date, datetime.max.time())
+            AssignedShift.start_time >= start_date,
+            AssignedShift.end_time <= end_date
         ).all()
         
         for shift in existing_shifts:
             db.session.delete(shift)
         
-        # Get all shift requirements in the date range
-        requirements = ShiftRequirement.query.filter(
-            ShiftRequirement.start_time >= datetime.combine(start_date, datetime.min.time()),
-            ShiftRequirement.end_time <= datetime.combine(end_date, datetime.max.time())
-        ).order_by(ShiftRequirement.start_time).all()
-        
-        # Get all active users
-        users = User.query.filter_by(active=True).all()
-        
-        # Get all approved time off requests in the date range
-        time_off_requests = TimeOffRequest.query.filter_by(status='approved').filter(
-            ((TimeOffRequest.start_time >= datetime.combine(start_date, datetime.min.time())) &
-             (TimeOffRequest.start_time <= datetime.combine(end_date, datetime.max.time()))) |
-            ((TimeOffRequest.end_time >= datetime.combine(start_date, datetime.min.time())) &
-             (TimeOffRequest.end_time <= datetime.combine(end_date, datetime.max.time()))) |
-            ((TimeOffRequest.start_time <= datetime.combine(start_date, datetime.min.time())) &
-             (TimeOffRequest.end_time >= datetime.combine(end_date, datetime.max.time())))
-        ).all()
-        
-        # Create a simple schedule (for MVP)
-        assigned_shifts = []
-        
-        # For each requirement, assign users who are capable of the role
-        for req in requirements:
-            # Get all users capable of this role
-            capable_users = [u for u in users if any(r.id == req.role_id for r in u.capable_roles)]
-            
-            # Shuffle users to randomize assignments
-            random.shuffle(capable_users)
-            
-            # Track how many users we've assigned to this requirement
-            assigned_count = 0
-            
-            # Try to assign users
-            for user in capable_users:
-                # Skip if we've met the requirement
-                if assigned_count >= req.employee_count:
-                    break
-                
-                # Check if user has time off during this shift
-                has_time_off = False
-                for tor in time_off_requests:
-                    if tor.user_id == user.id:
-                        if ((tor.start_time <= req.start_time and tor.end_time > req.start_time) or
-                            (tor.start_time < req.end_time and tor.end_time >= req.end_time) or
-                            (tor.start_time >= req.start_time and tor.end_time <= req.end_time)):
-                            has_time_off = True
-                            break
-                
-                if has_time_off:
-                    continue
-                
-                # Check if user already has a conflicting shift
-                has_conflict = False
-                for shift in assigned_shifts:
-                    if shift.user_id == user.id:
-                        if ((shift.start_time <= req.start_time and shift.end_time > req.start_time) or
-                            (shift.start_time < req.end_time and shift.end_time >= req.end_time) or
-                            (shift.start_time >= req.start_time and shift.end_time <= req.end_time)):
-                            has_conflict = True
-                            break
-                
-                if has_conflict:
-                    continue
-                
-                # Create a new shift assignment
-                shift = AssignedShift(
-                    user_id=user.id,
-                    role_id=req.role_id,
-                    start_time=req.start_time,
-                    end_time=req.end_time
+        # Create new shifts in the database
+        for shift in shifts:
+            shift_id = shift['id']
+            for employee_id in shift_assignments.get(shift_id, []):
+                assigned_shift = AssignedShift(
+                    user_id=employee_id,
+                    role_id=shift['role_id'],
+                    start_time=shift['start_time'],
+                    end_time=shift['end_time']
                 )
-                
-                # Add to database
-                db.session.add(shift)
-                assigned_shifts.append(shift)
-                assigned_count += 1
+                db.session.add(assigned_shift)
         
         # Commit all changes
         db.session.commit()
         
-        # Count how many requirements were fully satisfied
-        total_requirements = len(requirements)
-        requirements_met = 0
+        # Calculate statistics for the generated schedule
+        total_positions = sum(shift['required_staff'] for shift in shifts)
+        filled_positions = sum(len(assigned_emps) for assigned_emps in shift_assignments.values())
+        coverage_percentage = (filled_positions / total_positions * 100) if total_positions > 0 else 0
         
-        for req in requirements:
-            assigned_for_req = sum(1 for shift in assigned_shifts 
-                                 if shift.role_id == req.role_id and 
-                                 shift.start_time == req.start_time and
-                                 shift.end_time == req.end_time)
-            if assigned_for_req >= req.employee_count:
-                requirements_met += 1
+        # Get completed schedule data for response
+        schedule_data = []
+        for shift in shifts:
+            schedule_data.append({
+                'id': shift['id'],
+                'start_time': shift['start_time'].isoformat(),
+                'end_time': shift['end_time'].isoformat(),
+                'role_id': shift['role_id'],
+                'required_staff': shift['required_staff'],
+                'assigned_employees': shift_assignments.get(shift['id'], [])
+            })
         
-        # Return statistics
-        return jsonify({
-            'total_shifts_assigned': len(assigned_shifts),
-            'total_requirements': total_requirements,
-            'requirements_met': requirements_met,
-            'schedule_completion_percentage': (requirements_met / total_requirements * 100) if total_requirements > 0 else 0
-        }), 200
-    
-    except ValidationError as e:
-        return jsonify({'error': e.messages}), 400
+        # Prepare response
+        response = {
+            'message': 'Schedule generated successfully',
+            'status': 'success',
+            'statistics': {
+                'total_shifts': len(shifts),
+                'total_positions': total_positions,
+                'filled_positions': filled_positions,
+                'coverage_percentage': coverage_percentage,
+                'fitness_score': best_fitness,
+                'execution_time_seconds': execution_time,
+                'generations_completed': len(generation_stats)
+            },
+            'generation_stats': generation_stats,
+            'schedule': schedule_data
+        }
+        
+        return jsonify(response), 200
+        
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-    
+
+
+
+
+
+
+
 
 @schedules_bp.route('/<int:shift_id>/complete', methods=['POST'])
 @jwt_required()

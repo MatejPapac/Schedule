@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from marshmallow import ValidationError
 import logging
 from datetime import datetime
+from app import db
 
 # Import scheduling components
 from scheduling.services import SchedulingService
@@ -196,8 +197,7 @@ def evaluate_schedule():
     except Exception as e:
         logger.exception("Error evaluating schedule")
         return jsonify({'error': str(e)}), 500
-        logger.exception("Error generating test schedule")
-        return jsonify({'error': str(e)}), 500
+        
 
 
 @scheduling_bp.route('/generate', methods=['POST'])
@@ -333,7 +333,7 @@ def generate_schedule():
         # Convert schedule to dictionary for response
         schedule_dict = SchedulingService.schedule_to_dict(schedule)
         
-        # Now convert the schedule back to your database models
+        # Now convert the schedule back to database models
         # First, clear any existing assigned shifts in the date range
         from app import db
         from app.models.models import AssignedShift  # Import your AssignedShift model
@@ -378,3 +378,6 @@ def generate_schedule():
         return jsonify(response), 200
         
     except Exception as e:
+      logger.exception("Error generating schedule")
+      db.session.rollback()  # Rollback any database changes
+      return jsonify({'error': str(e)}), 500
